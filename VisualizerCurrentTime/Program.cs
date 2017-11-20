@@ -11,216 +11,408 @@ namespace VisualizerCurrentTime
 {
     class Program
     {
-        // Debug mode.
-
-        // This will be enecessary to convert KeyCodes to Chars.
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        public static extern int ToUnicode(
-            uint virtualKeyCode,
-            uint scanCode,
-            byte[] keyboardState,
-            StringBuilder receivingBuffer,
-            int bufferSize,
-            uint flags
-        );
-
+        ///////////////////
         // I/O
-        public static string FileInformationExportPath = ""; // Where the current info goes.
-        public static string FileLiveTextExportPath = ""; // Where the current text goes.
-        public static bool OptionExportInformation = false; // Am I writing to a file?
-        public static bool OptionExportText = false; // Am I writing to a file?
-        public static bool OptionPrintText = false; // Am I gonna print to the console screen?
-        public static System.Windows.Forms.KeysConverter TextKeyConverter = new System.Windows.Forms.KeysConverter(); // Converts WinForm key IDs to text keys.
+        ///////////////////
 
-        // Export Information
-        public static string SongTitle; // Current Song Title
-        public static string CurrentTime; // What time is it?
-        public static StringBuilder CurrentOnScreenText = new StringBuilder(100); // What text am I displaying?
-        public static string TextToPrint;
+        /// <summary>
+        /// Specifies the path to where the current information regarding time, music playback, etc. is exported to.
+        /// </summary>
+        private static string informationExportPath = "";
 
+        /// <summary>
+        /// Specifies the path where the currently typed text is continously saved to.
+        /// </summary>
+        private static string textExportPath = "";
+
+        /// <summary>
+        /// Specifies whether the program is currently writing individual information to a file.
+        /// </summary>
+        private static bool optionExportInformation = false;
+
+        /// <summary>
+        /// Specifies whether the program is currently writing user specified text to a file.
+        /// </summary>
+        private static bool optionExportText = false;
+
+        /// <summary>
+        /// Specifies whether the program will addiitonally print to the console screen as well as to the file (Debugging Use).
+        /// </summary>
+        private static bool optionPrintText = false;
+
+        /// <summary>
+        /// Allows for the conversion of the individual WinForms key IDs to text.
+        /// </summary>
+        private static System.Windows.Forms.KeysConverter keyConverter = new System.Windows.Forms.KeysConverter();
+
+        /////////////////////
+        // Information Export
+        /////////////////////
+
+        /// <summary>
+        /// Specifies the current local time.
+        /// </summary>
+        private static string currentTime;
+
+        /// <summary>
+        /// String builder for the current text that is displayed onscreen via dumping to file and being read in by Open Source Broadcaster.
+        /// </summary>
+        private static StringBuilder currentVisibleTextBuilder = new StringBuilder(100);
+
+        /// <summary>
+        /// String representing the text that is to be exported in the information text file, generally contains current time and song.
+        /// </summary>
+        private static string textToPrint;
+
+        ///////////////
         // Miscallenous
-        public static Process[] MusicBeeProcess; // List of active processes.
-        public static bool IsDumpingInfo = true; // Am I dumping info?
-        public static bool IsCurrentlyTyping; // Am I currently typing right now?
-        public static bool IsHoldingShift; // Am I holding shift?
-        public static bool IsResettingAssignments; // Am I resetting hotkeys?
-        public static List<int> HotkeyIDs = new List<int>(); // Stores all assigned IDs?
-        public static bool ExtraDebugging; // Display extra debugging info?
+        ///////////////
 
+        /// <summary>
+        /// Declares whether the information is being actively dumped.
+        /// </summary>
+        private  static bool isDumpingInfo = true;
 
-        // Main Method, it all starts here.
-        static void Main(string[] args)
+        /// <summary>
+        /// Declares whether the user is actively typing into the set text file.
+        /// </summary>
+        private static bool isTyping;
+
+        /// <summary>
+        /// Declares whether the user is currently holding the SHIFT button.
+        /// </summary>
+        private static bool isHoldingShift;
+
+        /// <summary>
+        /// Declares whether the user is currently resetting any of the set hotkeys.
+        /// </summary>
+        private static bool isResettingHotkeys;
+
+        /// <summary>
+        /// Stores all of the assigned button IDs associated with hotkeys.
+        /// </summary>
+        public static List<int> hotkeyIDs = new List<int>();
+
+        /// <summary>
+        /// Decides whether extra debugging information should be shown and printed to screen.
+        /// </summary>
+        private static bool extraDebugging; // Display extra debugging info?
+
+        //////////
+        // Modules
+        //////////
+
+        /// <summary>
+        /// Retrieves the currently playing song title from a running MusicBee instance.
+        /// </summary>
+        private static MusicBee musicBeeModule = new MusicBee();
+
+        /// <summary>
+        /// The main entry method for the program in which the execution cycle starts from.
+        /// </summary>
+        /// <param name="args"></param>
+        private static void Main(string[] args)
         {
+            // Displays the header of the console application, providing the necessary text and instructions for usage.
             WriteIntroduction();
+
+            // Queries the user the necessary settings such as whether X/Y/Z should be exported or handled.
             AssignSettings();
+
+            // Sets the hotkeys to be used within the space of the application.
             AssignKeys();
 
-            // Introduce another thread, purpose: Faster export of text!
-            Thread DumpTextToFileThread = new Thread
-            (
-                 new ThreadStart(DumpTextToFile)
-            );
+            // Introduce another thread which will expor the currently written text at a regular time interval. 
+            Thread DumpTextToFileThread = new Thread ( new ThreadStart(DumpTextToFile) );
             DumpTextToFileThread.Start();
 
-
-            // Main loop!
-            while (IsDumpingInfo == true)
+            // The main loop of the application!
+            while (isDumpingInfo == true)
             {
+                // Retrieves the current time, currently playing song and currently typed in text.
                 GetInformation();
-                SetTextToPrint();
 
-                if (OptionPrintText == true) { PrintInformation(); }
+                // Formats the information that is to be written to the information text file.
+                FormatInformationToPrint();
+
+                // If enabled, prints the currently typed in text to the console.
+                if (optionPrintText == true) { PrintText(); }
+
+                // Writes out the content of the current playing song and the time to a text file.
                 DumpInformationToFile();
 
-                Thread.Sleep(998);              
+                // Sleep for an approximate second of time before updating the information.
+                Thread.Sleep(999);              
             }
         }
 
-        // Write information to file
-        public static void DumpInformationToFile()
+        /// <summary>
+        /// Displays the introduction to the program, providing the necessary information about how to use the program.
+        /// </summary>
+        private static void WriteIntroduction()
         {
-                try
-                {
-                    if (OptionExportInformation == true) { File.WriteAllText(FileInformationExportPath, TextToPrint); }
-                }
-                catch (Exception Nope)
-                { }
+            CustomConsole.WriteSystemLine("------------------------------------");
+            CustomConsole.WriteSystemLine("Live Text Information Dumper");
+            CustomConsole.WriteSystemLine("Quick Utility for Personal Purposes\n");
+
+            CustomConsole.WriteSystemLine("Start Typing Text to File: Alt + 4");
+            CustomConsole.WriteSystemLine("Stop Typing Text: Alt + 5");
+            CustomConsole.WriteSystemLine("Clear Typed Text: Alt + 6");
+            CustomConsole.WriteSystemLine("End the Utility: Alt + 7 (Disabled)");
+            CustomConsole.WriteSystemLine("------------------------------------");
+        }
+        
+        /// <summary>
+        /// Queries the user for the individual settings
+        /// </summary>
+        private static void AssignSettings()
+        {
+            // File Path for Information Export
+            RequestInformationExportPath();
+
+            // File Path for Text Export
+            RequestTextExportPath();
+
+            // Print to screen?
+            RequestPrintToScreen();
+
+            // Extra debugging?
+            RequestExtraDebugging();
         }
 
-        // Write text
-        public static void DumpTextToFile()
+        /// <summary>
+        /// Requests the user to set the information export path where the current time and song title will be exported.
+        /// </summary>
+        private static void RequestInformationExportPath()
         {
-            while (IsDumpingInfo == true)
+            // Loop until either set or not set.
+            while (informationExportPath.Length == 0)
             {
+                // Display the prompt to the user.
+                System.Console.Write("Please set the file path to output info to ['none' for no export]: ");
+
+                // Read the text.
+                informationExportPath = System.Console.ReadLine();
+
+                // Enable the flag to enable the exporting of information to the text file.
+                if (informationExportPath != "none" && informationExportPath.Length != 0) { optionExportInformation = true; }
+            }
+        }
+
+        /// <summary>
+        /// Requests the user to set the text export path whereby the user's currently typed in text will be written to.
+        /// </summary>
+        private static void RequestTextExportPath()
+        {
+            // Loop until either set or not set.
+            while (textExportPath.Length == 0)
+            {
+                // Display the prompt to the user.
+                System.Console.Write("Please set the file path to output text to ['none' for no export]: ");
+
+                // Read the text.
+                textExportPath = System.Console.ReadLine();
+
+                // Enable the flag to enable the exporting of text to the text file.
+                if (textExportPath != "none" && textExportPath.Length != 0) { optionExportText = true; }
+            }
+        }
+
+        /// <summary>
+        /// Requests the user whether the currently typed in text should also be printed to the screen.
+        /// </summary>
+        private static void RequestPrintToScreen()
+        {
+            // Stores the user's response - the text that the user submits to console.
+            string response = "";
+
+            // Loop until either set or not set.
+            while (response != "Y" && response != "N")
+            {
+                // Display the prompt to the user.
+                System.Console.Write("Do you want to also print to the screen? [Y/N]: ");
+
+                // Read the text.
+                response = System.Console.ReadLine();
+
+                // Toggle the flag to enable/disable the exporting of text to the text file.
+                if (response == "Y") { optionPrintText = true; }
+                else if (response == "N") { optionPrintText = false; }
+            }
+        }
+
+        /// <summary>
+        /// Requests the user wishes to see any extra debugging information displayed on the screen.
+        /// </summary>
+        private static void RequestExtraDebugging()
+        {
+            // Stores the user's response - the text that the user submits to console.
+            string response = "";
+
+            // Loop until either set or not set.
+            while (response != "Y" && response != "N")
+            {
+                // Display the prompt to the user.
+                System.Console.Write("Do you want to print extra debugging information? [Y/N]: ");
+
+                // Read the text.
+                response = System.Console.ReadLine();
+
+                // Toggle the flag to enable/disable extra debugging information in the console.
+                if (response == "Y") { extraDebugging = true; }
+                else if (response == "N") { extraDebugging = false; }
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the current "information" which is to be written to the text file.
+        /// </summary>
+        private static void GetInformation()
+        {
+            musicBeeModule.GetSongTitle();
+            GetCurrentTime();
+        }
+
+        /// <summary>
+        /// Formats the information that is to be written to the information text file.
+        /// </summary>
+        private static void FormatInformationToPrint() { textToPrint = currentTime + " | " + musicBeeModule.songTitle; }
+
+        /// <summary>
+        /// Retrieves the current local system time.
+        /// </summary>
+        private static void GetCurrentTime() { currentTime = Convert.ToString(DateTime.Now.ToString("HH:mm:ss")); }
+
+        /// <summary>
+        /// Prints the currently typed in text to the console.
+        /// </summary>
+        private static void PrintText() { System.Console.WriteLine(textToPrint); }
+
+        /// <summary>
+        /// Prints the current typed in text to the console window.
+        /// </summary>
+        private static void PrintCurrentLiveText() { System.Console.WriteLine(currentVisibleTextBuilder); }
+
+        /// <summary>
+        /// Writes out the content of the current playing song and the time to a text file.
+        /// </summary>
+        private static void DumpInformationToFile()
+        {
+            try { if (optionExportInformation == true) { File.WriteAllText(informationExportPath, textToPrint); } }
+            catch { }
+        }
+
+        /// <summary>
+        /// Writes out the content of the currently typed in text to the text file
+        /// </summary>
+        private static void DumpTextToFile()
+        {
+            // An infinite loop to export the currently typed in text to file at more regular time intervals.
+            while (isDumpingInfo == true)
+            {
+                // Export the text to file if the option is set.
                 try
                 {
-                    if (OptionExportText == true) { File.WriteAllText(FileLiveTextExportPath, Convert.ToString(CurrentOnScreenText)); }
+                    if (optionExportText == true) { File.WriteAllText(textExportPath, Convert.ToString(currentVisibleTextBuilder)); }
+                    else { return; } // If we are not exporting, return and finish the thread.
                 }
-                catch (Exception Nope) 
-                { }
-                #if DEBUG
-                if (ExtraDebugging) Console.WriteLine("Dumping Text!");
-                #endif
+                catch { }
+
+                // Wait for next loop iteration.
                 Thread.Sleep(50);
             }
         }
 
-        public static void AssignSettings()
-        {
-            string InputResponse = "";
-
-            // File Path for Information Export
-            while (FileInformationExportPath.Length == 0)
-            {
-                Console.Write("Please set the file path to output info to ['none' for no export]: ");
-                FileInformationExportPath = Console.ReadLine();
-                if (FileInformationExportPath != "none" && FileInformationExportPath.Length != 0) { OptionExportInformation = true; }
-            }
-
-            // File Path for Text Export
-            while (FileLiveTextExportPath.Length == 0)
-            {
-                Console.Write("Please set the file path to output text to ['none' for no export]: ");
-                FileLiveTextExportPath = Console.ReadLine();
-                if (FileLiveTextExportPath != "none" && FileLiveTextExportPath.Length != 0) { OptionExportText = true; }
-            }
-
-            // Print to screen?
-            while (InputResponse != "Y" && InputResponse != "N")
-            {
-                Console.Write("Do you want to also print to the screen? [Y/N]: ");
-                InputResponse = Console.ReadLine();
-                if (InputResponse == "Y") { OptionPrintText = true; }
-                else if (InputResponse == "N") { OptionPrintText = false; }
-            }
-
-            InputResponse = "";
-            // Extra debugging?
-            while (InputResponse != "Y" && InputResponse != "N")
-            {
-                Console.Write("Do you want to print extra debugging information? [Y/N]: ");
-                InputResponse = Console.ReadLine();
-                if (InputResponse == "Y") { ExtraDebugging = true; }
-                else if (InputResponse == "N") { ExtraDebugging = false; }
-            }
-        }
-
-        public static void AssignKeys()
+        /// <summary>
+        /// Registers the hotkeys to be used within the application, hijacks all of the key inputs from the keyboard.
+        /// </summary>
+        private static void AssignKeys()
         {
             // Only hijack used hotkeys.
-            HotKeyManager.RegisterHotKey(Keys.D4, KeyModifiers.Alt);
-            HotKeyManager.RegisterHotKey(Keys.D5, KeyModifiers.Alt);
-            HotKeyManager.RegisterHotKey(Keys.D6, KeyModifiers.Alt);
-            HotKeyManager.RegisterHotKey(Keys.D7, KeyModifiers.Alt);
+            HotkeyManager.RegisterHotKey(Keys.D4, KeyModifiers.Alt);
+            HotkeyManager.RegisterHotKey(Keys.D5, KeyModifiers.Alt);
+            HotkeyManager.RegisterHotKey(Keys.D6, KeyModifiers.Alt);
+            HotkeyManager.RegisterHotKey(Keys.D7, KeyModifiers.Alt);
 
             // Fire if hotkey is struck.
-            HotKeyManager.HotKeyPressed += new EventHandler<HotKeyEventArgs>(ResolveHotkey);
+            HotkeyManager.hotkeyPressed += new EventHandler<HotKeyEventArgs>(ResolveHotkey);
         }
 
-        public static void AssignAllKeys()
+        /// <summary>
+        /// Assigns every key available on the keyboard to enable text typing onto the screen.
+        /// </summary>
+        private static void AssignAllKeys()
         {
             // Assign EVERY KEY (originally was just base A-Z but then we have symbols etc.
-            foreach (Keys Keyboardkey in Enum.GetValues(typeof(Keys)))
+            foreach (Keys keyboardKey in Enum.GetValues(typeof(Keys)))
             {
-                HotKeyManager.RegisterHotKey(Keyboardkey, KeyModifiers.NoRepeat);
-                HotKeyManager.RegisterHotKey(Keyboardkey, KeyModifiers.Alt);
-                HotKeyManager.RegisterHotKey(Keyboardkey, KeyModifiers.Control);
-                HotKeyManager.RegisterHotKey(Keyboardkey, KeyModifiers.Shift);
-                HotKeyManager.RegisterHotKey(Keyboardkey, KeyModifiers.Windows);
+                HotkeyManager.RegisterHotKey(keyboardKey, KeyModifiers.NoRepeat);
+                HotkeyManager.RegisterHotKey(keyboardKey, KeyModifiers.Alt);
+                HotkeyManager.RegisterHotKey(keyboardKey, KeyModifiers.Control);
+                HotkeyManager.RegisterHotKey(keyboardKey, KeyModifiers.Shift);
+                HotkeyManager.RegisterHotKey(keyboardKey, KeyModifiers.Windows);
             }
 
             // THIS HIJACKS THE ENTIRE KEYBOARD!
         }
 
-        // Back to factory settings
-        public static void ResetKeyAssignment()
+        /// <summary>
+        /// Once the user stops typing, disable the hijacking of all of keyboard input,  
+        /// </summary>
+        private static void ResetKeyAssignment()
         {
-            if (IsResettingAssignments == false)
+            // If the user is not currently resetting the hotkeys.
+            if (isResettingHotkeys == false)
             {
-                IsResettingAssignments = true;
-                for (int x = 0; x < HotkeyIDs.Count; x++)
+                // Toggle flag for resetting of the hotkeys.
+                isResettingHotkeys = true;
+
+                // Unregister every hotkey action for all of the assigned keys.
+                for (int x = 0; x < hotkeyIDs.Count; x++)
                 {
-                    HotKeyManager.UnregisterHotKey(HotkeyIDs[x]);
-                    if (ExtraDebugging) Console.WriteLine("Key unmapped: " + HotkeyIDs[x]);
+                    HotkeyManager.UnregisterHotKey(hotkeyIDs[x]);
+                    if (extraDebugging) System.Console.WriteLine("Key unmapped: " + hotkeyIDs[x]);
                 }
 
-                HotkeyIDs.Clear();
+                // Clear all of the assigned hotkey IDs.
+                hotkeyIDs.Clear();
 
-                if (ExtraDebugging)
-                {
-                    foreach (int HotkeyID in HotkeyIDs)
-                    {
-                        Console.WriteLine("This key shouldn't be mapped: " + HotkeyID + " | If you see this, tell Sewer he ****** up.");
-                    }
-                }
+                // Retrieves the list of still assigned keys within the application.
+                CheckAssignedKeys();
 
                 // Only hijack used hotkeys.
-                HotKeyManager.RegisterHotKey(Keys.D4, KeyModifiers.Alt);
-                HotKeyManager.RegisterHotKey(Keys.D5, KeyModifiers.Alt);
-                HotKeyManager.RegisterHotKey(Keys.D6, KeyModifiers.Alt);
-                HotKeyManager.RegisterHotKey(Keys.D7, KeyModifiers.Alt);
+                HotkeyManager.RegisterHotKey(Keys.D4, KeyModifiers.Alt);
+                HotkeyManager.RegisterHotKey(Keys.D5, KeyModifiers.Alt);
+                HotkeyManager.RegisterHotKey(Keys.D6, KeyModifiers.Alt);
+                HotkeyManager.RegisterHotKey(Keys.D7, KeyModifiers.Alt);
 
+                // Sleep Arbitrarily
                 Thread.Sleep(400);
-                IsResettingAssignments = false;
+                isResettingHotkeys = false;
             }
         }
 
-        public static void WriteIntroduction()
+        /// <summary>
+        /// Retrieves the list of still assigned keys within the application if the user requested extra debugging.
+        /// </summary>
+        private static void CheckAssignedKeys()
         {
-            ConsoleX.WriteSystemLine("------------------------------------");
-            ConsoleX.WriteSystemLine("Live Text Information Dumper");
-            ConsoleX.WriteSystemLine("Quick Utility for Personal Purposes\n");
-
-            ConsoleX.WriteSystemLine("Start Typing Text to File: Alt + 4");
-            ConsoleX.WriteSystemLine("Stop Typing Text: Alt + 5");
-            ConsoleX.WriteSystemLine("Clear Typed Text: Alt + 6");
-            ConsoleX.WriteSystemLine("End the Utility: Alt + 7 (Disabled)");
-            ConsoleX.WriteSystemLine("------------------------------------");
+            if (extraDebugging)
+            {
+                foreach (int HotkeyID in hotkeyIDs)
+                {
+                    System.Console.WriteLine("This key shouldn't be mapped: " + HotkeyID + " | If you see this, tell Sewer he ****** up.");
+                }
+            }
         }
 
-        public static void ResolveHotkey(object sender, HotKeyEventArgs HotkeyArguments)
+        /// <summary>
+        /// Resolves the currently pressed key and performs an appropriate event.
+        /// </summary>
+        private static void ResolveHotkey(object sender, HotKeyEventArgs HotkeyArguments)
         {
-            if (ExtraDebugging) ConsoleX.WriteDebugHeader("Input Received!");
+            // Prints to the console if extra debugging is enabled.
+            if (extraDebugging) CustomConsole.WriteDebugHeader("Input Received!");
 
             // Check for known hotkeys
             if (HotkeyArguments.Key == Keys.D4 && HotkeyArguments.Modifiers == KeyModifiers.Alt) { StartTyping(); }
@@ -229,120 +421,110 @@ namespace VisualizerCurrentTime
             else if (HotkeyArguments.Key == Keys.D7 && HotkeyArguments.Modifiers == KeyModifiers.Alt) { ApplicationExit(); }
 
             // Else if in text editor or typing mode
-            else if (IsCurrentlyTyping == true)
+            else if (isTyping) { TextEditorTypingMode(HotkeyArguments); }
+        }
+
+        /// <summary>
+        /// Resolves
+        /// </summary>
+        private static void TextEditorTypingMode(HotKeyEventArgs HotkeyArguments)
+        {
+            // Validate special control keys!
+            if (HotkeyArguments.Key == Keys.Back) { RemoveLastCharacter(); }
+            else if (HotkeyArguments.Key == Keys.Space) { currentVisibleTextBuilder.Append(" "); }
+            else
             {
+                // Are we holding shift?
+                if (HotkeyArguments.Modifiers == KeyModifiers.Shift) { isHoldingShift = true; } else { isHoldingShift = false; }
 
-                // Validate special control keys!
-                if (HotkeyArguments.Key == Keys.Back) { if (CurrentOnScreenText.Length > 0) { CurrentOnScreenText.Remove(CurrentOnScreenText.Length - 1, 1); } ConsoleX.WriteDebugMessage("Text Removed, New Text: " + CurrentOnScreenText); }
-                else if (HotkeyArguments.Key == Keys.Space) { CurrentOnScreenText.Append(" "); }
-                else
+                // Convert pressed key to Unicode conversion!
+                string PressedKey = GetCharactersFromKeys(HotkeyArguments.Key, isHoldingShift);
+
+                // If it is a control character, discard the current input.
+                if (PressedKey.Length == 1)
                 {
-                    // Are we holding shift?
-                    if (HotkeyArguments.Modifiers == KeyModifiers.Shift) { IsHoldingShift = true; } else { IsHoldingShift = false; }
-
-                    // Okay, time for Unicode conversion!
-                    string PressedKey = GetCharactersFromKeys(HotkeyArguments.Key, IsHoldingShift);
-
-                    // If it is a control character we probably do not want it.
-                    if (PressedKey.Length == 1)
-                    {
-                        CurrentOnScreenText.Append(PressedKey);
-                        if (ExtraDebugging) ConsoleX.WriteDebugMessage("Current Text: " + CurrentOnScreenText + " | " + "Pressed Key: " + HotkeyArguments.Key + " | " + "Resolved Key: " + PressedKey);
-                        else { Console.Clear(); ConsoleX.WriteDebugMessage("Current Text: " + CurrentOnScreenText); }
-                    }
+                    currentVisibleTextBuilder.Append(PressedKey);
+                    if (extraDebugging) CustomConsole.WriteDebugMessage("Current Text: " + currentVisibleTextBuilder + " | " + "Pressed Key: " + HotkeyArguments.Key + " | " + "Resolved Key: " + PressedKey);
+                    else { System.Console.Clear(); CustomConsole.WriteDebugMessage("Current Text: " + currentVisibleTextBuilder); }
                 }
             }
         }
 
-        public static void SetTextToPrint()
+        /// <summary>
+        /// Removes the last character from the local stringbuilder instance
+        /// </summary>
+        private static void RemoveLastCharacter()
         {
-            TextToPrint = CurrentTime + " | " + SongTitle;
+            // Remove the last character from the StringBuilder.
+            if (currentVisibleTextBuilder.Length > 0) { currentVisibleTextBuilder.Remove(currentVisibleTextBuilder.Length - 1, 1); }
+
+            // Display new message.
+            CustomConsole.WriteDebugMessage("Text Removed, New Text: " + currentVisibleTextBuilder);
         }
 
-        public static void PrintCurrentLiveText()
+        /// <summary>
+        /// Starts the typing sequence for custom text.
+        /// </summary>
+        private static void StartTyping()
         {
-            Console.WriteLine(CurrentOnScreenText);
-        }
-
-        public static void StartTyping()
-        {
-            ConsoleX.WriteDebugHeader("Start Typing!");
-            IsCurrentlyTyping = true;
+            CustomConsole.WriteDebugHeader("Start Typing!");
+            isTyping = true;
             AssignAllKeys();
-
-            Thread LiveTypingThread = new Thread
-            (
-                new ThreadStart(TextTypingHandler)    
-            );
         }
 
-        public static void TextTypingHandler()
+        /// <summary>
+        /// Finishes the typing sequence for custom text.
+        /// </summary>
+        private static void StopTyping()
         {
-            while (IsCurrentlyTyping == true)
-            {
-                // Poll if typing every 500ms, variable changed externally, this is on another thread.
-                Thread.Sleep(500);
-            }
-        }
-
-        public static void StopTyping()
-        {
-            ConsoleX.WriteDebugHeader("Stop Typing!");
-            IsCurrentlyTyping = false;
+            CustomConsole.WriteDebugHeader("Stop Typing!");
+            isTyping = false;
             ResetKeyAssignment();
         }
 
-        public static void ClearTyping()
+        /// <summary>
+        /// Clears the currently typed in text.
+        /// </summary>
+        private static void ClearTyping()
         {
-            ConsoleX.WriteDebugHeader("Clear The Text!");
-            CurrentOnScreenText.Remove(0, CurrentOnScreenText.Length);
+            CustomConsole.WriteDebugHeader("Clear The Text!");
+            currentVisibleTextBuilder.Remove(0, currentVisibleTextBuilder.Length);
         }
 
-        public static void ApplicationExit()
+        /// <summary>
+        /// Exits the application.
+        /// </summary>
+        private static void ApplicationExit()
         {
-            ConsoleX.WriteDebugHeader("Goodbye!");
-            //Application.Exit();
+            CustomConsole.WriteDebugHeader("Goodbye!");
+            Application.Exit();
         }
 
-        public static void PrintInformation()
+        /// <summary>
+        /// Converts the typed in characters to their unicode representation.
+        /// </summary>
+        private static string GetCharactersFromKeys(Keys keys, bool shift)
         {
-            Console.WriteLine(TextToPrint);
+            // Buffer for strings.
+            StringBuilder stringBuffer = new StringBuilder(256);
+
+            // Represents the current keyboard state, the buttons that are currently pressed.
+            byte[] keyboardState = new byte[256];
+
+            // If the shift button is held, register the key in the keyboard state array.
+            if (shift) { keyboardState[(int)Keys.ShiftKey] = 0xff; }
+            
+            // Convert the pressed key to Unicode and export to the buffer.
+            ToUnicode((uint)keys, 0, keyboardState, stringBuffer, 256, 0);
+
+            // Return the typed in character.
+            return stringBuffer.ToString();
         }
 
-        public static void GetCurrentTime()
-        {
-            CurrentTime = Convert.ToString(DateTime.Now.ToString("HH:mm:ss"));
-        }
-
-        public static void GetInformation()
-        {
-            GetSongTitle();
-            GetCurrentTime();
-        }
-
-        public static void GetSongTitle()
-        {
-            try
-            {
-                MusicBeeProcess = Process.GetProcessesByName("MusicBee");
-                if (MusicBeeProcess.Length != 0) { SongTitle = MusicBeeProcess[0].MainWindowTitle.Substring(0, MusicBeeProcess[0].MainWindowTitle.Length - 11); }
-            }
-            catch (Exception Nope)
-            {
-
-            }
-        }
-
-        static string GetCharactersFromKeys(Keys keys, bool shift)
-        {
-            var buf = new StringBuilder(256);
-            var keyboardState = new byte[256];
-            if (shift)
-            {
-                keyboardState[(int)Keys.ShiftKey] = 0xff;
-            }
-            ToUnicode((uint)keys, 0, keyboardState, buf, 256, 0);
-            return buf.ToString();
-        }
+        /// <summary>
+        /// Translates the specified virtual-key code and keyboard state to the corresponding Unicode character or characters.
+        /// </summary>
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int ToUnicode(uint virtualKeyCode, uint scanCode, byte[] keyboardState, StringBuilder receivingBuffer, int bufferSize, uint flags);
     }
 }
