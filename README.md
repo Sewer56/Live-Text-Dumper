@@ -7,4 +7,4 @@ This would allow the user to create tutorials resembling the old YouTube style, 
 The application also provides additional options for the exporting of the current time to a text file as well as the current song that is being played live.
 
 ### Example of Usage:
-![](https://gitlab.com/sewer56lol/Text-Information-Live-File-Dumper/raw/master/Example%20Usage%20with%20OBS/Example.png)
+![](https://raw.githubusercontent.com/sewer56lol/Live-Text-Dumper/master/Example%20Usage%20with%20OBS/Example.png)
